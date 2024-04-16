@@ -16,13 +16,12 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.dicoding.picodiploma.mycamera.databinding.ActivityCameraBinding
 import org.tensorflow.lite.task.gms.vision.detector.Detection
-import java.text.NumberFormat
 import java.util.concurrent.Executors
 
 class CameraActivity : AppCompatActivity() {
-    private lateinit var objectDetectorHelper: ObjectDetectorHelper
     private lateinit var binding: ActivityCameraBinding
     private var cameraSelector: CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private lateinit var objectDetectorHelper: ObjectDetectorHelper
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,28 +47,49 @@ class CameraActivity : AppCompatActivity() {
                     }
                 }
 
-                override fun onResults(result: MutableList<Detection>?, inferenceTime: Long) {
+                override fun onResults(
+                    results: MutableList<Detection>?,
+                    inferenceTime: Long,
+                    imgHeight: Int,
+                    imgWidth: Int
+                ) {
                     runOnUiThread {
-                        result?.let {
+                        results?.let { it ->
+//                            if (it.isNotEmpty() && it[0].categories.isNotEmpty()) {
+//                                println(it)
+//
+//                                val builder = StringBuilder()
+//                                for (result in results) {
+//                                    val displayResult =
+//                                        "${result.categories[0].label} " + NumberFormat.getPercentInstance()
+//                                            .format(result.categories[0].score).trim()
+//                                    builder.append("$displayResult \n")
+//                                }
+//
+//                                binding.tvResult.text = builder.toString()
+//                                binding.tvResult.visibility = View.VISIBLE
+//                                binding.tvInferenceTime.text = "$inferenceTime ms"
+//
+//                            } else {
+//                                binding.tvResult.text = ""
+//                                binding.tvInferenceTime.text = ""
+//                            }
+                            //masukkan hasil inferensi ke dalam OverlayView
                             if (it.isNotEmpty() && it[0].categories.isNotEmpty()) {
                                 println(it)
-                                val sortedCategories =
-                                    it[0].categories.sortedByDescending { it?.score }
-                                val displayResult =
-                                    sortedCategories.joinToString("\n") {
-                                        "${it.label} " + NumberFormat.getPercentInstance()
-                                            .format(it.score).trim()
-                                    }
-                                binding.tvResult.text = displayResult
+                                binding.overlay.setResult(
+                                    results, imgHeight, imgWidth
+                                )
                                 binding.tvInferenceTime.text = "$inferenceTime ms"
                             } else {
-                                binding.tvResult.text = ""
+                                binding.overlay.clear()
                                 binding.tvInferenceTime.text = ""
                             }
                         }
+                        // Force a redraw
+                        binding.overlay.invalidate()
                     }
                 }
-
             }
         )
 
@@ -87,14 +107,12 @@ class CameraActivity : AppCompatActivity() {
                 .build()
             imageAnalyzer.setAnalyzer(Executors.newSingleThreadExecutor()) { image ->
                 objectDetectorHelper.detectObject(image)
-
             }
 
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
             }
-
             try {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
@@ -103,7 +121,6 @@ class CameraActivity : AppCompatActivity() {
                     preview,
                     imageAnalyzer
                 )
-
             } catch (exc: Exception) {
                 Toast.makeText(
                     this@CameraActivity,
