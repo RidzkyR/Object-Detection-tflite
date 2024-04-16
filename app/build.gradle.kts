@@ -38,6 +38,7 @@ android {
 }
 
 dependencies {
+    implementation("org.tensorflow:tensorflow-lite-support:0.1.0")
     val cameraxVersion = "1.3.0"
 
     implementation("androidx.core:core-ktx:1.12.0")

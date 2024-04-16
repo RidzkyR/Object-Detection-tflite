@@ -15,12 +15,12 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.dicoding.picodiploma.mycamera.databinding.ActivityCameraBinding
-import org.tensorflow.lite.task.gms.vision.classifier.Classifications
+import org.tensorflow.lite.task.gms.vision.detector.Detection
 import java.text.NumberFormat
 import java.util.concurrent.Executors
 
 class CameraActivity : AppCompatActivity() {
-    private lateinit var imageClassifierHelper: ImageClassifierHelper
+    private lateinit var objectDetectorHelper: ObjectDetectorHelper
     private lateinit var binding: ActivityCameraBinding
     private var cameraSelector: CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -39,16 +39,16 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun startCamera() {
-        imageClassifierHelper = ImageClassifierHelper(
+        objectDetectorHelper = ObjectDetectorHelper(
             context = this,
-            classifierListener = object : ImageClassifierHelper.ClassifierListener {
+            detectorListener = object : ObjectDetectorHelper.DetectorListener {
                 override fun onError(error: String) {
                     runOnUiThread {
                         Toast.makeText(this@CameraActivity, error, Toast.LENGTH_SHORT).show()
                     }
                 }
 
-                override fun onResults(result: List<Classifications>?, inferenceTime: Long) {
+                override fun onResults(result: MutableList<Detection>?, inferenceTime: Long) {
                     runOnUiThread {
                         result?.let {
                             if (it.isNotEmpty() && it[0].categories.isNotEmpty()) {
@@ -86,7 +86,7 @@ class CameraActivity : AppCompatActivity() {
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                 .build()
             imageAnalyzer.setAnalyzer(Executors.newSingleThreadExecutor()) { image ->
-                imageClassifierHelper.classifyImage(image)
+                objectDetectorHelper.detectObject(image)
 
             }
 
