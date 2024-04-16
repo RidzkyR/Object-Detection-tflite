@@ -15,46 +15,44 @@ import org.tensorflow.lite.support.common.ops.CastOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
-import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.task.core.BaseOptions
 import org.tensorflow.lite.task.core.vision.ImageProcessingOptions
 import org.tensorflow.lite.task.gms.vision.TfLiteVision
-import org.tensorflow.lite.task.gms.vision.detector.Detection
-import org.tensorflow.lite.task.gms.vision.detector.ObjectDetector
+import org.tensorflow.lite.task.gms.vision.classifier.Classifications
+import org.tensorflow.lite.task.gms.vision.classifier.ImageClassifier
 
-class ObjectDetectorHelper(
-    private var threshold: Float = 0.5f,
-    private var maxResults: Int = 5,
-    private val modelName: String = "efficientdet_lite0_v1", // penulisan value harus benar besar kecilnya
+class ImageClassifierHelper(
+    var threshold: Float = 0.1f,
+    var maxResults: Int = 3,
+    val modelName: String = "efficientdet_lite0_v1.tflite",
     val context: Context,
-    val detectorListener: DetectorListener?,
+    val classifierListener: ClassifierListener?
 ) {
-    private var objectDetector: ObjectDetector? = null
+    private var imageClassifier: ImageClassifier? = null
 
-    //memeriksa ketersediaan GPU Delegate dan menginisialisasi TFLiteVision
     init {
         TfLiteGpu.isGpuDelegateAvailable(context).onSuccessTask { gpuAvailable ->
-            val optionBuilder = TfLiteInitializationOptions.builder()
+            val optionsBuilder = TfLiteInitializationOptions.builder()
             if (gpuAvailable) {
-                optionBuilder.setEnableGpuDelegateSupport(true)
+                optionsBuilder.setEnableGpuDelegateSupport(true)
             }
-            TfLiteVision.initialize(context, optionBuilder.build())
+            TfLiteVision.initialize(context, optionsBuilder.build())
         }.addOnSuccessListener {
-            setupObjectDetector()
+            setupImageClassifier()
         }.addOnFailureListener {
-            detectorListener?.onError(context.getString(R.string.tflitevision_is_not_initialized_yet))
+            classifierListener?.onError(context.getString(R.string.tflitevision_is_not_initialized_yet))
         }
     }
 
-    private fun setupObjectDetector() {
-        val optionsBuilder = ObjectDetector.ObjectDetectorOptions.builder()
+    private fun setupImageClassifier() {
+        val optionsBuilder = ImageClassifier.ImageClassifierOptions.builder()
             .setScoreThreshold(threshold)
             .setMaxResults(maxResults)
         val baseOptionsBuilder = BaseOptions.builder()
 
-        if (CompatibilityList().isDelegateSupportedOnThisDevice) {
+        if (CompatibilityList().isDelegateSupportedOnThisDevice){
             baseOptionsBuilder.useGpu()
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1){
             baseOptionsBuilder.useNnapi()
         } else {
             // Menggunakan CPU
@@ -64,56 +62,50 @@ class ObjectDetectorHelper(
         optionsBuilder.setBaseOptions(baseOptionsBuilder.build())
 
         try {
-            objectDetector = ObjectDetector.createFromFileAndOptions(
+            imageClassifier = ImageClassifier.createFromFileAndOptions(
                 context,
                 modelName,
                 optionsBuilder.build()
             )
         } catch (e: IllegalStateException) {
-            detectorListener?.onError(context.getString(R.string.image_classifier_failed))
+            classifierListener?.onError(context.getString(R.string.image_classifier_failed))
             Log.e(TAG, e.message.toString())
         }
     }
 
-    fun detectObject(image: ImageProxy) {
+    fun classifyImage(image: ImageProxy) {
 
-        // memeriksa TfLiteVision sudah diinisialisasi atau belum
         if (!TfLiteVision.isInitialized()) {
             val errorMessage = context.getString(R.string.tflitevision_is_not_initialized_yet)
             Log.e(TAG, errorMessage)
-            detectorListener?.onError(errorMessage)
+            classifierListener?.onError(errorMessage)
             return
         }
 
-        if (objectDetector == null) {
-            setupObjectDetector()
+        if (imageClassifier == null) {
+            setupImageClassifier()
         }
 
         val imageProcessor = ImageProcessor.Builder()
             .add(ResizeOp(224, 224, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
-            .add(Rot90Op(-image.imageInfo.rotationDegrees / 90))
+            .add(CastOp(DataType.UINT8))
             .build()
 
-        val tensorImage =
-            imageProcessor.process(TensorImage.fromBitmap(toBitmap(image))) // mengubah bitmap ke tensorImage
+        val tensorImage = imageProcessor.process(TensorImage.fromBitmap(toBitmap(image)))
 
-        // ini untuk image classification
-//        val imageProcessingOptions = ImageProcessingOptions
-//            .builder()
-//            .setOrientation(getOrientationFromRotation(image.imageInfo.rotationDegrees))
-//            .build()
+        val imageProcessingOptions = ImageProcessingOptions.builder()
+            .setOrientation(getOrientationFromRotation(image.imageInfo.rotationDegrees))
+            .build()
 
-        //inference Time
         var inferenceTime = SystemClock.uptimeMillis()
-        val results = objectDetector?.detect(tensorImage)
+        val results = imageClassifier?.classify(tensorImage, imageProcessingOptions)
         inferenceTime = SystemClock.uptimeMillis() - inferenceTime
-        detectorListener?.onResults(
+        classifierListener?.onResults(
             results,
             inferenceTime
         )
     }
 
-    //mengubah imageProxy ke Bitmap
     private fun toBitmap(image: ImageProxy): Bitmap {
         val bitmapBuffer = Bitmap.createBitmap(
             image.width,
@@ -134,13 +126,15 @@ class ObjectDetectorHelper(
         }
     }
 
-    interface DetectorListener {
+    interface ClassifierListener {
         fun onError(error: String)
-        fun onResults(result: MutableList<Detection>?, inferenceTime: Long)
+        fun onResults(
+            results: List<Classifications>?,
+            inferenceTime: Long
+        )
     }
 
     companion object {
-        private const val TAG = "ObjectDetectorHelper"
+        private const val TAG = "ImageClassifierHelper"
     }
-
 }
